@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Route Lab</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #000;
+    }
+
+    /* 全屏地图容器 */
+    #map {
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
+    /* 顶部仪表盘 HUD */
+    .dashboard-panel {
+      position: absolute;
+      top: calc(12px + env(safe-area-inset-top));
+      left: 12px;
+      right: 12px;
+      z-index: 1000;
+      background: rgba(20, 20, 25, 0.85);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 16px;
+      padding: 12px 16px;
+      color: #fff;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .app-title {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      color: #00e5ff;
+      text-transform: uppercase;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .status-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: #333;
+      color: #aaa;
+      font-weight: 500;
+    }
+
+    .status-badge.active {
+      background: rgba(0, 230, 118, 0.2);
+      color: #00e676;
+      border: 1px solid rgba(0, 230, 118, 0.4);
+    }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      text-align: center;
+    }
+
+    .metric-card {
+      background: rgba(255, 255, 255, 0.05);
+      padding: 8px 4px;
+      border-radius: 10px;
+    }
+
+    .metric-label {
+      font-size: 10px;
+      color: #a0a0a0;
+      margin-bottom: 2px;
+      text-transform: uppercase;
+    }
+
+    .metric-value {
+      font-size: 14px;
+      font-weight: 600;
+      font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+      color: #ffffff;
+    }
+
+    /* 底部控制按钮 */
+    .controls-panel {
+      position: absolute;
+      bottom: calc(20px + env(safe-area-inset-bottom));
+      left: 0;
+      right: 0;
+      z-index: 1000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 0 16px;
+    }
+
+    .btn-start {
+      background: linear-gradient(135deg, #00e5ff 0%, #0072ff 100%);
+      color: #fff;
+      border: none;
+      padding: 16px 48px;
+      font-size: 18px;
+      font-weight: 700;
+      border-radius: 30px;
+      box-shadow: 0 6px 20px rgba(0, 114, 255, 0.4);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      letter-spacing: 0.5px;
+    }
+
+    .btn-start:active {
+      transform: scale(0.96);
+      box-shadow: 0 3px 10px rgba(0, 114, 255, 0.3);
+    }
+
+    .btn-stop {
+      background: linear-gradient(135deg, #ff5252 0%, #ff1744 100%);
+      box-shadow: 0 6px 20px rgba(255, 23, 68, 0.4);
+    }
+
+    /* 自定义 GPS 脉冲标记点样式 */
+    .user-location-marker {
+      position: relative;
+    }
+
+    .marker-dot {
+      width: 16px;
+      height: 16px;
+      background-color: #0072ff;
+      border: 3px solid #ffffff;
+      border-radius: 50%;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.4);
+    }
+
+    .marker-pulse {
+      position: absolute;
+      top: -8px;
+      left: -8px;
+      width: 32px;
+      height: 32px;
+      background-color: rgba(0, 114, 255, 0.4);
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+      pointer-events: none;
+    }
+
+    @keyframes pulse {
+      0% {
+        transform: scale(0.5);
+        opacity: 1;
+      }
+      100% {
+        transform: scale(2.2);
+        opacity: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 地图容器 -->
+  <div id="map"></div>
+
+  <!-- 顶部仪表盘 -->
+  <div class="dashboard-panel">
+    <div class="app-title">
+      <span>Route Lab</span>
+      <span id="statusBadge" class="status-badge">Standby</span>
+    </div>
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-label">Latitude</div>
+        <div id="latVal" class="metric-value">--</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Longitude</div>
+        <div id="lngVal" class="metric-value">--</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Accuracy</div>
+        <div id="accVal" class="metric-value">--</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 底部控制按钮 -->
+  <div class="controls-panel">
+    <button id="toggleBtn" class="btn-start">Start</button>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nXC0jk30eZ/61Z59U7X53244D0X2x3415f308f=" crossorigin=""></script>
+
+  <script>
+    let map = null;
+    let locationMarker = null;
+    let accuracyCircle = null;
+    let watchId = null;
+    let isTracking = false;
+    let hasInitialCentered = false;
+
+    // 默认地图初始中心（若无定位时显示）
+    const defaultCenter = [25.0330, 121.5654]; // 台北 101 坐标
+
+    // UI 元素
+    const toggleBtn = document.getElementById('toggleBtn');
+    const statusBadge = document.getElementById('statusBadge');
+    const latVal = document.getElementById('latVal');
+    const lngVal = document.getElementById('lngVal');
+    const accVal = document.getElementById('accVal');
+
+    // 初始化 Leaflet 地图
+    function initMap() {
+      map = L.map('map', {
+        zoomControl: false,
+        attributionControl: false
+      }).setView(defaultCenter, 15);
+
+      // 加载 OpenStreetMap 瓦片图层
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+
+      // 将默认的 Leaflet logo / attribution 放到右下角轻量显示
+      L.control.attribution({ position: 'bottomright' }).addTo(map);
+    }
+
+    // 创建自定义 GPS 标记 Icon
+    function createCustomMarkerIcon() {
+      return L.divIcon({
+        className: 'user-location-marker',
+        html: '<div class="marker-pulse"></div><div class="marker-dot"></div>',
+        iconSize: [16, 16],
+        iconAnchor: [8, 8]
+      });
+    }
+
+    // 处理定位更新成功
+    function handlePositionSuccess(position) {
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
+      const accuracy = position.coords.accuracy;
+
+      // 更新仪表盘数据
+      latVal.textContent = lat.toFixed(5);
+      lngVal.textContent = lng.toFixed(5);
+      accVal.textContent = `${Math.round(accuracy)} m`;
+
+      const latLng = [lat, lng];
+
+      if (!locationMarker) {
+        // 创建定位 Marker 与 精度圈
+        locationMarker = L.marker(latLng, { icon: createCustomMarkerIcon() }).addTo(map);
+        accuracyCircle = L.circle(latLng, {
+          radius: accuracy,
+          color: '#0072ff',
+          fillColor: '#0072ff',
+          fillOpacity: 0.15,
+          weight: 1
+        }).addTo(map);
+      } else {
+        // 更新 Marker 与 精度圈位置
+        locationMarker.setLatLng(latLng);
+        accuracyCircle.setLatLng(latLng);
+        accuracyCircle.setRadius(accuracy);
+      }
+
+      // 首次定位或追踪状态下将地图中心移至当前坐标
+      if (!hasInitialCentered) {
+        map.setView(latLng, 17, { animate: true });
+        hasInitialCentered = true;
+      } else {
+        map.panTo(latLng, { animate: true });
+      }
+    }
+
+    // 处理定位错误
+    function handlePositionError(err) {
+      console.warn(`GPS Error (${err.code}): ${err.message}`);
+      let msg = "GPS Error";
+      if (err.code === 1) msg = "Permission Denied";
+      else if (err.code === 2) msg = "Position Unavailable";
+      else if (err.code === 3) msg = "Timeout";
+
+      statusBadge.textContent = msg;
+      statusBadge.style.background = "rgba(255, 23, 68, 0.2)";
+      statusBadge.style.color = "#ff5252";
+    }
+
+    // 开始高精度 GPS 追踪
+    function startTracking() {
+      if (!navigator.geolocation) {
+        alert("Geolocation is not supported by your browser.");
+        return;
+      }
+
+      const options = {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0
+      };
+
+      watchId = navigator.geolocation.watchPosition(handlePositionSuccess, handlePositionError, options);
+      isTracking = true;
+
+      // UI 状态更新
+      toggleBtn.textContent = "Stop";
+      toggleBtn.classList.add("btn-stop");
+      statusBadge.textContent = "Tracking";
+      statusBadge.classList.add("active");
+    }
+
+    // 停止 GPS 追踪
+    function stopTracking() {
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+      }
+      isTracking = false;
+
+      // UI 状态更新
+      toggleBtn.textContent = "Start";
+      toggleBtn.classList.remove("btn-stop");
+      statusBadge.textContent = "Paused";
+      statusBadge.classList.remove("active");
+      statusBadge.style.background = "#333";
+      statusBadge.style.color = "#aaa";
+    }
+
+    // 按钮点击监听
+    toggleBtn.addEventListener('click', () => {
+      if (isTracking) {
+        stopTracking();
+      } else {
+        startTracking();
+      }
+    });
+
+    // 页面加载完成后初始化地图
+    window.addEventListener('DOMContentLoaded', initMap);
+  </script>
+</body>
+</html>
